@@ -41,6 +41,19 @@ import {
   type ModelProviderResponse,
 } from "@/lib/api";
 
+/**
+ * The curated model list to offer for an adapter, or null for a free-text model ID.
+ * A Base URL other than the adapter's default points at a server (Ollama, vLLM, a
+ * proxy) whose model IDs the catalog can't know, so it is treated like the
+ * pass-through adapters.
+ */
+export function curatedModelsFor(adapter: string, baseUrl: string) {
+  const custom = baseUrl.trim().replace(/\/+$/, "");
+  const fallback = ADAPTER_DEFAULT_BASE_URL[adapter]?.replace(/\/+$/, "");
+  if (custom && custom !== fallback) return null;
+  return ADAPTER_MODELS[adapter as LLMAdapter] ?? null;
+}
+
 interface ModelProvidersTabProps {
   workspaceId: string;
 }
@@ -258,7 +271,7 @@ export function ModelProvidersTab({ workspaceId }: ModelProvidersTabProps) {
   }
 
   function addCustomModel() {
-    const curatedModels = ADAPTER_MODELS[adapter as LLMAdapter];
+    const curatedModels = curatedModelsFor(adapter, baseUrl);
     if (curatedModels) {
       const used = new Set(customModels);
       const next = curatedModels.find((m) => !used.has(m.id));
@@ -325,7 +338,7 @@ export function ModelProvidersTab({ workspaceId }: ModelProvidersTabProps) {
   const hasRequiredBaseUrl = adapterConfig?.requiresBaseUrl ? !!baseUrl.trim() : true;
   const canSave = adapter && providerName && hasCredentials && hasRequiredBaseUrl;
 
-  const curatedModelsForAdapter = adapter ? ADAPTER_MODELS[adapter as LLMAdapter] : null;
+  const curatedModelsForAdapter = adapter ? curatedModelsFor(adapter, baseUrl) : null;
   const isAddModelDisabled = curatedModelsForAdapter
     ? curatedModelsForAdapter.every((m) => customModels.includes(m.id))
     : false;
@@ -554,9 +567,10 @@ export function ModelProvidersTab({ workspaceId }: ModelProvidersTabProps) {
                 {(() => {
                   const protocols = ADAPTER_AVAILABLE_PROTOCOLS[adapter];
                   const hasMultipleProtocols = protocols && protocols.length > 1;
-                  const curatedModels = ADAPTER_MODELS[adapter as LLMAdapter];
+                  const curatedModels = curatedModelsFor(adapter, baseUrl);
+                  const suggestions = ADAPTER_MODELS[adapter as LLMAdapter];
 
-                  return customModels.map((model, i) => (
+                  const rows = customModels.map((model, i) => (
                     <div key={i} className="flex items-center gap-2">
                       {curatedModels ? (
                         <Select value={model} onValueChange={(v) => updateCustomModel(i, v)}>
@@ -581,6 +595,7 @@ export function ModelProvidersTab({ workspaceId }: ModelProvidersTabProps) {
                       ) : (
                         <Input
                           value={model}
+                          list={suggestions ? "curated-model-ids" : undefined}
                           onChange={(e) => updateCustomModel(i, e.target.value)}
                           placeholder={
                             {
@@ -621,6 +636,19 @@ export function ModelProvidersTab({ workspaceId }: ModelProvidersTabProps) {
                       </Button>
                     </div>
                   ));
+
+                  return (
+                    <>
+                      {rows}
+                      {!curatedModels && suggestions && (
+                        <datalist id="curated-model-ids">
+                          {suggestions.map((m) => (
+                            <option key={m.id} value={m.id} />
+                          ))}
+                        </datalist>
+                      )}
+                    </>
+                  );
                 })()}
 
                 {customModels.length === 0 && (
